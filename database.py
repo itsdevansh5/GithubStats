@@ -5,4 +5,6 @@ MONGO_URL = "mongodb+srv://trivedidevansh1080_db_user:Q2jlFgyFLnnyq7px@githubsta
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client["github_stats_db"]       # database name
-stats_collection = db["stats"]       # collection name
+stats_collection = db["stats"]# collection name
+history_collection = db["history"] #for snapshots
+

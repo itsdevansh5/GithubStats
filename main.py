@@ -1,4 +1,4 @@
-from database import stats_collection
+from database import stats_collection,history_collection
 from datetime import datetime,timedelta
 from fastapi import *
 import httpx
@@ -90,6 +90,9 @@ async def get_language_stats(username: str):
         "fetched_at": datetime.utcnow()
     }
 
+# 4️⃣ Save the result to history (append)
+    await history_collection.insert_one(data)
+
     await stats_collection.update_one(
         {"username": username},
         {"$set": data},
@@ -102,4 +105,24 @@ async def get_language_stats(username: str):
         "cached": False,
         "total_bytes": total_langs,
         "percentages": percentages
+    }
+    
+@app.get("/history/{username}")
+async def get_history(username: str):
+    cursor = history_collection.find({"username": username}).sort("fetched_at", 1)
+    
+    history = []
+    async for doc in cursor:
+        history.append({
+            "fetched_at": doc["fetched_at"],
+            "percentages": doc["percentages"],
+            "total_bytes": doc["total_bytes"]
+        })
+
+    if not history:
+        raise HTTPException(status_code=404, detail="No history found for this user")
+
+    return {
+        "username": username,
+        "history": history
     }
