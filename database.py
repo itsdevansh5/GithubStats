@@ -1,7 +1,11 @@
 
 from motor.motor_asyncio import AsyncIOMotorClient
+from dotenv import load_dotenv
+import os
 
-MONGO_URL = "mongodb+srv://trivedidevansh1080_db_user:Q2jlFgyFLnnyq7px@githubstats.16hgp0d.mongodb.net/?appName=GithubStats"
+load_dotenv()
+
+MONGO_URL = os.getenv("MONGO_URL")
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client["github_stats_db"]       # database name
