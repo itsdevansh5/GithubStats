@@ -63,16 +63,16 @@ github-stats/
 
 # 🌐 Live Demo
 
-> 🟢 Replace `<YOUR_RENDER_URL>` with your actual deployment URL.
+> Frontend Coming Soon .....
 
 ### 🚀 **Base URL**
 ```
-https://<YOUR_RENDER_URL>
+https://githubstats-gqcp.onrender.com/
 ```
 
 ### 📘 **Swagger Docs**
 ```
-https://<YOUR_RENDER_URL>/docs
+https://githubstats-gqcp.onrender.com/docs
 ```
 
 ---
