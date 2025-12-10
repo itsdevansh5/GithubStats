@@ -1,8 +1,9 @@
-
+from .svg_generator import generate_stats_svg
 from fastapi import FastAPI, HTTPException
 from .stats_service import compute_language_stats
 from .database import history_collection
 from .models import StatsResponse
+from fastapi.responses import Response
 
 app = FastAPI()
 
@@ -32,3 +33,15 @@ async def get_history(username: str):
         "username": username,
         "history": history
     }
+
+
+@app.get("/card/stats")
+async def stats_card(username: str):
+    data, _ = await compute_language_stats(username)
+    
+    svg = generate_stats_svg(
+        username=data["username"],
+        percentages=data["percentages"]
+    )
+    
+    return Response(content=svg, media_type="image/svg+xml")   
