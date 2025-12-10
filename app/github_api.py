@@ -16,3 +16,5 @@ async def fetch_from_github(url: str):
             detail="GitHub API error or user not found"
         )
     return response.json()
+
+print("TOKEN USED:", os.getenv("GITHUB_TOKEN"))
