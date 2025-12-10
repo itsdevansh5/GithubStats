@@ -219,7 +219,111 @@ GITHUB_TOKEN=your_token_here
 PYTHON_VERSION=3.11
 ```
 
-### 6️⃣ Deploy 🎉
+# 📊 GitHub Stats Card (Dynamic SVG)
+
+This project provides a **dynamic GitHub Language Stats Card** that updates automatically using a FastAPI backend and MongoDB caching.  
+It generates a clean SVG card showing the programming languages you use across your GitHub repositories.
+
+---
+
+## 🚀 Live Demo
+
+### 🌐 View Your Own Card  
+Replace `USERNAME` with any GitHub username:
+
+```
+https://githubstats-gqcp.onrender.com/card/stats?username=USERNAME
+```
+
+### 🔥 Example (Devansh)
+```
+https://githubstats-gqcp.onrender.com/card/stats?username=itsdevansh5
+```
+
+---
+
+## 🎨 Themes
+
+You can apply different themes using the `theme` parameter:
+
+### 🔹 Dark (default)
+```
+https://githubstats-gqcp.onrender.com/card/stats?username=USERNAME&theme=dark
+```
+
+### 🔹 Light
+```
+https://githubstats-gqcp.onrender.com/card/stats?username=USERNAME&theme=light
+```
+
+### 🔹 Neon
+```
+https://githubstats-gqcp.onrender.com/card/stats?username=USERNAME&theme=neon
+```
+
+---
+
+## 📌 Add to Your GitHub Profile README
+
+To display your card on your GitHub profile, add this snippet inside your `README.md`:
+
+```html
+<h2 align="center">📊 My GitHub Language Stats</h2>
+
+<p align="center">
+  <img src="https://githubstats-gqcp.onrender.com/card/stats?username=itsdevansh5&theme=dark" alt="GitHub Stats"/>
+</p>
+```
+
+### Markdown version (not centered):
+
+```md
+![GitHub Stats](https://githubstats-gqcp.onrender.com/card/stats?username=itsdevansh5)
+```
+
+---
+
+## 🔄 GitHub Cache Notice
+
+GitHub caches external images, so changes may appear after some time.
+
+To force refresh, use a cache-buster parameter:
+
+```
+https://githubstats-gqcp.onrender.com/card/stats?username=itsdevansh5&v=2
+```
+
+Increase `v` to refresh instantly.
+
+---
+
+## 🛠 How It Works
+
+- Fetches GitHub repo data  
+- Aggregates language usage  
+- Computes percentages  
+- Generates dynamic SVG using FastAPI  
+- Caches results for 24h in MongoDB  
+- Returns instantly on subsequent requests  
+
+This ensures speed, reliability, and reduced GitHub API usage.
+
+---
+
+## ⭐ Upcoming Improvements
+
+- Icons for languages  
+- Animated bars  
+- Compact mode  
+- More card layouts  
+- Custom fonts & themes  
+- Weekly/monthly stats  
+- Contribution heatmap card  
+
+---
+
+
+
 
 ---
 
