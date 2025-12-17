@@ -44,4 +44,8 @@ async def stats_card(username: str):
         percentages=data["percentages"]
     )
     
-    return Response(content=svg, media_type="image/svg+xml")   
+    return Response(content=svg, media_type="image/svg+xml",headers={
+            # "public" = intermediate proxies (like GitHub Camo) can cache it
+            # "max-age=14400" = Keep this in cache for 4 hours
+            "Cache-Control": "public, max-age=14400"
+        })   
