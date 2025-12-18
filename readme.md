@@ -176,6 +176,8 @@ Generates a dynamic **SVG GitHub stats card** for a user.
 ```html
 <img src="https://githubstats-gqcp.onrender.com/card?username=itsdevansh5" />
 ```
+<img width="1920" height="1080" alt="Screenshot (23)" src="https://github.com/user-attachments/assets/980db523-2754-4d15-9b39-745a81bb337c" />
+
 ---
 
 
