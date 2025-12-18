@@ -1,3 +1,4 @@
+
 name: Keep API alive
 
 on:
@@ -9,4 +10,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Call API
-         run: curl  https://githubstats-gqcp.onrender.com/ 
+        run: curl https://githubstats-gqcp.onrender.com/
