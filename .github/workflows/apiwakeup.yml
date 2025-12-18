@@ -1,0 +1,12 @@
+name: Keep API alive
+
+on:
+  schedule:
+    -cron: "*/10 * * * *"
+
+jobs:
+  ping:
+     runs-on: ubuntu-latest
+     steps:
+       - name: Call API
+         run: curl  https://githubstats-gqcp.onrender.com/ 
