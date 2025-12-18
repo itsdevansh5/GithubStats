@@ -74,6 +74,16 @@ https://githubstats-gqcp.onrender.com/
 ```
 https://githubstats-gqcp.onrender.com/docs
 ```
+### Embed in Your README
+
+```html
+<img src="https://githubstats-gqcp.onrender.com/card/stats?username=YOUR_GITHUB_USERNAME" />
+```
+
+Example:
+```html
+<img src="https://githubstats-gqcp.onrender.com/card/stats?username=itsdevansh5" />
+```
 
 ---
 
@@ -155,7 +165,19 @@ Returns all historical snapshots of the user.
 }
 ```
 
+## 3️⃣ `GET /card`
+
+Generates a dynamic **SVG GitHub stats card** for a user.
+
+**Query Params:**
+- `username` — GitHub username (required)
+
+**Example:**
+```html
+<img src="https://githubstats-gqcp.onrender.com/card?username=itsdevansh5" />
+```
 ---
+
 
 # 🧮 How Percentages Are Calculated
 
