@@ -17,4 +17,3 @@ async def fetch_from_github(url: str):
         )
     return response.json()
 
-print("TOKEN USED:", os.getenv("GITHUB_TOKEN"))
