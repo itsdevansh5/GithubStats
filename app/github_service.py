@@ -1,3 +1,4 @@
+import asyncio
 import httpx
 
 from .github_api import fetch_from_github
@@ -6,6 +7,8 @@ from .github_api import fetch_from_github
 # Reuse one HTTP client for GitHub API requests.
 # We will revisit client lifecycle later when we productionize the app.
 client = httpx.AsyncClient()
+
+MAX_CONCURRENT_GITHUB_REQUESTS = 5
 
 
 async def get_user_repositories(username: str) -> list[dict]:
@@ -23,87 +26,91 @@ async def get_user_repositories(username: str) -> list[dict]:
     return repos
 
 
-async def fetch_repository_languages(repo: dict) -> dict:
+async def fetch_repository_languages(
+    repo: dict,
+    semaphore: asyncio.Semaphore,
+) -> dict | None:
     """
     Fetch language statistics for one GitHub repository.
 
-    Args:
-        repo: Repository dictionary returned by GitHub.
-
     Returns:
-        Dictionary containing language names and their byte counts.
-
-        Example:
-        {
-            "Python": 54231,
-            "HTML": 12341,
-            "CSS": 8421
-        }
-
-    Raises:
-        ValueError: If GitHub returns an invalid language response.
-        httpx.HTTPStatusError: If GitHub returns an unsuccessful
-        HTTP status code.
+        A dictionary containing language names and byte counts,
+        or None if this repository cannot be processed.
     """
 
     # GitHub provides the exact endpoint for this repository.
     lang_url = repo["languages_url"]
 
-    # Make the HTTP request.
-    response = await client.get(lang_url)
+    try:
+        # Only MAX_CONCURRENT_GITHUB_REQUESTS coroutines
+        # can enter this block at the same time.
+        async with semaphore:
 
-    # Raise an exception for HTTP errors such as 403, 404, 500, etc.
-    response.raise_for_status()
+            # Make the HTTP request to GitHub.
+            response = await client.get(lang_url)
 
-    # Convert the JSON response body into a Python object.
-    lang_data = response.json()
+            # Raise an exception for unsuccessful HTTP responses.
+            response.raise_for_status()
 
-    # The languages endpoint should return a non-empty dictionary.
-    if not isinstance(lang_data, dict) or not lang_data:
-        raise ValueError("Invalid language data returned by GitHub")
+            # Convert the JSON response into a Python object.
+            lang_data = response.json()
 
-    # Language byte counts should be integers.
-    if not all(isinstance(value, int) for value in lang_data.values()):
-        raise ValueError("Invalid language byte counts returned by GitHub")
+            # The languages endpoint should return a non-empty dictionary.
+            if not isinstance(lang_data, dict) or not lang_data:
+                raise ValueError("Invalid language data returned by GitHub")
 
-    return lang_data
+            # Every language's value should be an integer byte count.
+            if not all(isinstance(value, int) for value in lang_data.values()):
+                raise ValueError(
+                    "Invalid language byte counts returned by GitHub"
+                )
+
+            return lang_data
+
+    except (httpx.HTTPError, ValueError):
+        # One repository failing should not fail the entire request.
+        return None
 
 
 async def fetch_all_repository_languages(
     repos: list[dict],
 ) -> list[dict]:
     """
-    Fetch language statistics for all valid repositories.
-
-    Currently this function performs requests sequentially.
-    We will replace this with bounded concurrency later.
-
-    Returns:
-        A list containing one language dictionary per valid repository.
+    Fetch language statistics for all valid repositories
+    using bounded concurrency.
     """
 
-    all_languages = []
+    # Controls the maximum number of GitHub requests
+    # that can be active simultaneously.
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_GITHUB_REQUESTS)
+
+    coroutines = []
 
     for repo in repos:
 
-        # Forked repositories are not included in the statistics.
+        # Skip forked repositories.
         if repo.get("fork"):
             continue
 
-        # Archived repositories are not included in the statistics.
+        # Skip archived repositories.
         if repo.get("archived"):
             continue
 
-        try:
-            # Fetch language statistics for this repository.
-            repo_languages = await fetch_repository_languages(repo)
+        # Create the coroutine but do not await it yet.
+        coroutines.append(
+            fetch_repository_languages(repo, semaphore)
+        )
 
-            # Store the language dictionary.
-            all_languages.append(repo_languages)
+    # Run the repository-fetching coroutines concurrently.
+    # The semaphore inside each coroutine limits the actual
+    # number of simultaneous GitHub requests.
+    all_languages = await asyncio.gather(*coroutines)
 
-        except (httpx.HTTPError, ValueError):
-            # If one repository cannot be processed,
-            # skip it instead of failing the entire request.
-            continue
+    # Remove repositories whose language request failed.
+    all_languages = [
+        result
+        for result in all_languages
+        if result is not None
+    ]
 
     return all_languages
