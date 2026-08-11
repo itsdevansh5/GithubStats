@@ -6,7 +6,9 @@ from .github_api import fetch_from_github
 
 # Reuse one HTTP client for GitHub API requests.
 # We will revisit client lifecycle later when we productionize the app.
-client = httpx.AsyncClient()
+timeout = httpx.Timeout(5.0)
+client = httpx.AsyncClient(timeout=timeout)
+
 
 MAX_CONCURRENT_GITHUB_REQUESTS = 5
 MAX_REPO_SIZE_TO_CONSIDER = 5_000_000
