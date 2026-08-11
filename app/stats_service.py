@@ -38,13 +38,7 @@ async def compute_language_stats(username: str):
 
     for repo_languages in language_data:
 
-        # Calculate total bytes represented by this repository.
-        repo_size = sum(repo_languages.values())
-
-        # Ignore extremely large repositories.
-        # This is a statistics/business rule, not GitHub API logic.
-        if repo_size > 5_000_000:
-            continue
+        
 
         for language, bytes_count in repo_languages.items():
             total_langs[language] = (

@@ -9,6 +9,7 @@ from .github_api import fetch_from_github
 client = httpx.AsyncClient()
 
 MAX_CONCURRENT_GITHUB_REQUESTS = 5
+MAX_REPO_SIZE_TO_CONSIDER = 5_000_000
 
 
 async def get_user_repositories(username: str) -> list[dict]:
@@ -63,6 +64,11 @@ async def fetch_repository_languages(
             if not all(isinstance(value, int) for value in lang_data.values()):
                 raise ValueError(
                     "Invalid language byte counts returned by GitHub"
+                )
+            total_bytes = sum(lang_data.values())
+            if total_bytes> MAX_REPO_SIZE_TO_CONSIDER:
+                raise ValueError(
+                     "Large size repository"
                 )
 
             return lang_data
