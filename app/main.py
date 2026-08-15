@@ -2,7 +2,7 @@ from .svg_generator import generate_stats_svg
 from fastapi import FastAPI, HTTPException
 from .stats_service import compute_language_stats
 from .database import history_collection
-from .models import StatsResponse
+from .models import StatsResponse,GithubUsername
 from fastapi.responses import Response
 
 app = FastAPI()
@@ -12,13 +12,13 @@ def home():
     return {"message": "GitHub Stats API Running"}
 
 @app.get("/stats/{username}", response_model=StatsResponse)
-async def get_stats(username: str):
+async def get_stats(username: GithubUsername):
     data, cached = await compute_language_stats(username)
     data["cached"] = cached
     return data
 
 @app.get("/history/{username}")
-async def get_history(username: str):
+async def get_history(username: GithubUsername):
     cursor = history_collection.find({"username": username}).sort("fetched_at", 1)
     history = []
 
@@ -36,7 +36,7 @@ async def get_history(username: str):
 
 
 @app.get("/card/stats/{username}")
-async def stats_card(username: str):
+async def stats_card(username: GithubUsername):
     data, _ = await compute_language_stats(username)
     
     svg = generate_stats_svg(
