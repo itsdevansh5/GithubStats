@@ -35,7 +35,7 @@ async def get_history(username: str):
     }
 
 
-@app.get("/card/stats")
+@app.get("/card/stats/{username}")
 async def stats_card(username: str):
     data, _ = await compute_language_stats(username)
     
