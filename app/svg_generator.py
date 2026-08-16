@@ -1,5 +1,8 @@
 from xml.sax.saxutils import escape
-
+# We are using escping as a defensive mechanism to be sure about the data
+# we are giving to xml parser, even though current username and language 
+# naming may have no threats, defensive approach here is more effecient then 
+# checking new rules regularly
 def shorten(text, max_chars=12):
     if len(text) > max_chars:
         return text[:max_chars - 3] + "..."
