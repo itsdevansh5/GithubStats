@@ -2,10 +2,10 @@ import asyncio
 import httpx
 
 from .github_api import fetch_from_github
-
+from .exceptions import GithubRateLimitError
 
 # Reuse one HTTP client for GitHub API requests.
-# We will revisit client lifecycle later when we productionize the app.
+
 timeout = httpx.Timeout(5.0)
 client = httpx.AsyncClient(timeout=timeout)
 
@@ -75,6 +75,11 @@ async def fetch_repository_languages(
 
             return lang_data
 
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code==429:
+           raise GithubRateLimitError("Github Rate limit has been exceeded")
+        return None
+
     except (httpx.HTTPError, ValueError):
         # One repository failing should not fail the entire request.
         return None
@@ -92,7 +97,7 @@ async def fetch_all_repository_languages(
     # that can be active simultaneously.
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_GITHUB_REQUESTS)
 
-    coroutines = []
+    tasks = []
 
     for repo in repos:
 
@@ -105,14 +110,22 @@ async def fetch_all_repository_languages(
             continue
 
         # Create the coroutine but do not await it yet.
-        coroutines.append(
-            fetch_repository_languages(repo, semaphore)
+        tasks.append(
+           asyncio.create_task(fetch_repository_languages(repo, semaphore))
         )
-
-    # Run the repository-fetching coroutines concurrently.
+    # Created tasks instead of coroutines to get control for cancellation when needed
+    # Run the repository-fetching tasks concurrently.
     # The semaphore inside each coroutine limits the actual
     # number of simultaneous GitHub requests.
-    all_languages = await asyncio.gather(*coroutines)
+    try:
+         all_languages = await asyncio.gather(*tasks)
+    
+    except GithubRateLimitError:
+        for task in tasks:
+           if not task.done():
+               task.cancel()
+        await asyncio.gather(*tasks,return_exceptions=True)
+        raise
 
     # Remove repositories whose language request failed.
     all_languages = [
@@ -122,3 +135,4 @@ async def fetch_all_repository_languages(
     ]
 
     return all_languages
+    
