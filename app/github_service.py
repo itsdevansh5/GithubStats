@@ -74,6 +74,9 @@ async def fetch_repository_languages(
                 )
 
             return lang_data
+    
+    except httpx.TimeoutException:
+        return None
 
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code==429:
