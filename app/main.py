@@ -4,7 +4,7 @@ from .stats_service import compute_language_stats
 from .database import history_collection
 from .models import StatsResponse,GithubUsername
 from fastapi.responses import Response
-from .exceptions import GithubRateLimitError
+from .exceptions import GithubRateLimitError,GithubServerError
 
 app = FastAPI()
 
@@ -18,9 +18,14 @@ async def get_stats(username: GithubUsername):
         data, cached = await compute_language_stats(username)
     except GithubRateLimitError:
         raise HTTPException(
-            status_code=429,
+            status_code=503,
             detail="GitHub Rate Limit Exhausted"
-          )        
+          )
+    except GithubServerError:
+        raise HTTPException(
+            status_code=503,
+            detail="Github is currently unavailable"
+         )        
         
     data["cached"] = cached
     return data

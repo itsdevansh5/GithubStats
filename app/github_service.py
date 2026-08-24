@@ -2,7 +2,7 @@ import asyncio
 import httpx
 
 from .github_api import fetch_from_github
-from .exceptions import GithubRateLimitError
+from .exceptions import GithubRateLimitError,GithubServerError
 
 # Reuse one HTTP client for GitHub API requests.
 
@@ -12,7 +12,7 @@ client = httpx.AsyncClient(timeout=timeout)
 
 MAX_CONCURRENT_GITHUB_REQUESTS = 5
 MAX_REPO_SIZE_TO_CONSIDER = 5_000_000
-
+MAX_ATTEMPTS = 3
 
 async def get_user_repositories(username: str) -> list[dict]:
     """
@@ -43,16 +43,19 @@ async def fetch_repository_languages(
 
     # GitHub provides the exact endpoint for this repository.
     lang_url = repo["languages_url"]
-
-    try:
+    
+    for attempt in range(MAX_ATTEMPTS):
+        
+        try:
         # Only MAX_CONCURRENT_GITHUB_REQUESTS coroutines
         # can enter this block at the same time.
-        async with semaphore:
+            async with semaphore:
 
             # Make the HTTP request to GitHub.
-            response = await client.get(lang_url)
+                   response = await client.get(lang_url)
 
             # Raise an exception for unsuccessful HTTP responses.
+            
             response.raise_for_status()
 
             # Convert the JSON response into a Python object.
@@ -75,17 +78,24 @@ async def fetch_repository_languages(
 
             return lang_data
     
-    except httpx.TimeoutException:
-        return None
+        except httpx.TimeoutException:
+            return None
 
-    except httpx.HTTPStatusError as exc:
-        if exc.response.status_code==429:
-           raise GithubRateLimitError("Github Rate limit has been exceeded")
-        return None
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code==429:
+                raise GithubRateLimitError("Github Rate limit has been exceeded")
 
-    except (httpx.HTTPError, ValueError):
+            if 500<=exc.response.status_code<600:
+                if attempt<MAX_ATTEMPTS-1:
+                     await asyncio.sleep(2**attempt)
+                     continue
+                raise GithubServerError("Github Internal Server Error")
+        
+            return None
+
+        except (httpx.HTTPError, ValueError):
         # One repository failing should not fail the entire request.
-        return None
+            return None
 
 
 async def fetch_all_repository_languages(
@@ -123,7 +133,7 @@ async def fetch_all_repository_languages(
     try:
          all_languages = await asyncio.gather(*tasks)
     
-    except GithubRateLimitError:
+    except (GithubRateLimitError,GithubServerError):
         for task in tasks:
            if not task.done():
                task.cancel()
