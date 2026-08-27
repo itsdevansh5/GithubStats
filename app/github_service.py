@@ -14,6 +14,18 @@ MAX_CONCURRENT_GITHUB_REQUESTS = 5
 MAX_REPO_SIZE_TO_CONSIDER = 5_000_000
 MAX_ATTEMPTS = 3
 
+def get_next_url(link_header:str | None) -> str | None:
+    if not link_header:
+       return None
+
+    links =  link_header.split(',')
+    for link in links:
+       if 'rel="next"' in link:
+          return link.strip().split(';')[0].strip('<>')
+   
+    return None
+
+
 async def get_user_repositories(username: str) -> list[dict]:
     """
     Fetch repositories belonging to a GitHub user.
@@ -21,14 +33,19 @@ async def get_user_repositories(username: str) -> list[dict]:
     Returns:
         A list of repository dictionaries returned by GitHub.
     """
-
-    repo_url = f"https://api.github.com/users/{username}/repos"
-
-    repos = await fetch_from_github(repo_url)
-
+    repos = []
+    repo_url = f"https://api.github.com/users/{username}/repos?per_page=100"
+   
+    while repo_url:
+        repos_one_page,link = await fetch_from_github(repo_url)
+        repos.extend(repos_one_page)
+        repo_url = get_next_url(link)
+  
     return repos
-
-
+   
+    
+     
+ 
 async def fetch_repository_languages(
     repo: dict,
     semaphore: asyncio.Semaphore,
