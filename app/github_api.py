@@ -6,8 +6,10 @@ import os
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 HEADERS = {"Authorization": f"token {GITHUB_TOKEN}"} if GITHUB_TOKEN else {}
 
+client = httpx.AsyncClient(headers = HEADERS,timeout = httpx.Timeout(5.0))
+                  
 async def fetch_from_github(url: str):
-    async with httpx.AsyncClient() as client:
+
         try:
             response = await client.get(url, headers=HEADERS)
             response.raise_for_status()

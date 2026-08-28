@@ -1,13 +1,13 @@
 import asyncio
 import httpx
 
-from .github_api import fetch_from_github
+from .github_api import fetch_from_github,client
 from .exceptions import GithubRateLimitError,GithubServerError
 
 # Reuse one HTTP client for GitHub API requests.
 
-timeout = httpx.Timeout(5.0)
-client = httpx.AsyncClient(timeout=timeout)
+
+
 
 
 MAX_CONCURRENT_GITHUB_REQUESTS = 5
@@ -40,7 +40,7 @@ async def get_user_repositories(username: str) -> list[dict]:
         repos_one_page,link = await fetch_from_github(repo_url)
         repos.extend(repos_one_page)
         repo_url = get_next_url(link)
-  
+      
     return repos
    
     
