@@ -1,7 +1,7 @@
 import asyncio
 import httpx
 
-from .github_api import fetch_from_github,client
+from .github_api import fetch_from_github
 from .exceptions import GithubRateLimitError,GithubServerError
 
 # Reuse one HTTP client for GitHub API requests.
@@ -26,7 +26,7 @@ def get_next_url(link_header:str | None) -> str | None:
     return None
 
 
-async def get_user_repositories(username: str) -> list[dict]:
+async def get_user_repositories(username: str,client : httpx.AsyncClient) -> list[dict]:
     """
     Fetch repositories belonging to a GitHub user.
 
@@ -37,7 +37,7 @@ async def get_user_repositories(username: str) -> list[dict]:
     repo_url = f"https://api.github.com/users/{username}/repos?per_page=100"
    
     while repo_url:
-        repos_one_page,link = await fetch_from_github(repo_url)
+        repos_one_page,link = await fetch_from_github(repo_url,client)
         repos.extend(repos_one_page)
         repo_url = get_next_url(link)
       
@@ -49,6 +49,7 @@ async def get_user_repositories(username: str) -> list[dict]:
 async def fetch_repository_languages(
     repo: dict,
     semaphore: asyncio.Semaphore,
+    client: httpx.AsyncClient
 ) -> dict | None:
     """
     Fetch language statistics for one GitHub repository.
@@ -117,6 +118,7 @@ async def fetch_repository_languages(
 
 async def fetch_all_repository_languages(
     repos: list[dict],
+    client: httpx.AsyncClient
 ) -> list[dict]:
     """
     Fetch language statistics for all valid repositories
@@ -141,7 +143,7 @@ async def fetch_all_repository_languages(
 
         # Create the coroutine but do not await it yet.
         tasks.append(
-           asyncio.create_task(fetch_repository_languages(repo, semaphore))
+           asyncio.create_task(fetch_repository_languages(repo, semaphore,client))
         )
     # Created tasks instead of coroutines to get control for cancellation when needed
     # Run the repository-fetching tasks concurrently.

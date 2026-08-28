@@ -1,17 +1,13 @@
 
 import httpx
 from .exceptions import GithubRateLimitError,GithubServerError
-import os
 
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-HEADERS = {"Authorization": f"token {GITHUB_TOKEN}"} if GITHUB_TOKEN else {}
 
-client = httpx.AsyncClient(headers = HEADERS,timeout = httpx.Timeout(5.0))
                   
-async def fetch_from_github(url: str):
+async def fetch_from_github(url: str, client:httpx.AsyncClient):
 
         try:
-            response = await client.get(url, headers=HEADERS)
+            response = await client.get(url)
             response.raise_for_status()
       
         except httpx.HTTPStatusError as exc:

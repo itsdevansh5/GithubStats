@@ -1,5 +1,5 @@
 from .svg_generator import generate_stats_svg
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from .stats_service import compute_language_stats
 from .database import history_collection
 from .models import StatsResponse,GithubUsername
@@ -31,9 +31,12 @@ def home():
     return {"message": "GitHub Stats API Running"}
 
 @app.get("/stats/{username}", response_model=StatsResponse)
-async def get_stats(username: GithubUsername):
+async def get_stats(username: GithubUsername, request: Request):
+
+    client = request.app.state.github_client
+
     try:
-        data, cached = await compute_language_stats(username)
+        data, cached = await compute_language_stats(username,client)
     except GithubRateLimitError:
         raise HTTPException(
             status_code=503,

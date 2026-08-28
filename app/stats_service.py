@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from fastapi import HTTPException
+import httpx
 
 from .database import stats_collection, history_collection
 from .github_service import (
@@ -8,7 +9,7 @@ from .github_service import (
 )
 
 
-async def compute_language_stats(username: str):
+async def compute_language_stats(username: str,client: httpx.AsyncClient):
 
     # --------------------------------
     # 1. CHECK CACHE (24 HOURS)
@@ -24,12 +25,12 @@ async def compute_language_stats(username: str):
     # --------------------------------
     # 2. FETCH USER REPOSITORIES
     # --------------------------------
-    repos = await get_user_repositories(username)
+    repos = await get_user_repositories(username,client)
 
     # --------------------------------
     # 3. FETCH LANGUAGE DATA
     # --------------------------------
-    language_data = await fetch_all_repository_languages(repos)
+    language_data = await fetch_all_repository_languages(repos,client)
 
     # --------------------------------
     # 4. AGGREGATE LANGUAGE TOTALS
