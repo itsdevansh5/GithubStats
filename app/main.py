@@ -5,8 +5,26 @@ from .database import history_collection
 from .models import StatsResponse,GithubUsername
 from fastapi.responses import Response
 from .exceptions import GithubRateLimitError,GithubServerError
+from contextlib import asynccontextmanager
+import httpx
+import os
 
-app = FastAPI()
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+HEADERS = {"Authorization": f"token {GITHUB_TOKEN}"} if GITHUB_TOKEN else {}
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.github_client = httpx.AsyncClient(
+            headers = HEADERS,
+            timeout = httpx.Timeout(5.0)
+            )
+
+    yield
+
+    await app.state.github_client.aclose()
+
+
+app = FastAPI(lifespan = lifespan)
 
 @app.get("/")
 def home():
