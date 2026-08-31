@@ -7,13 +7,9 @@ from fastapi.responses import Response
 from .exceptions import GithubRateLimitError,GithubServerError
 from contextlib import asynccontextmanager
 from .redis_caching import create_redis_client
-from dotenv import load_dotenv
 import httpx
-import os
+from .config import GITHUB_TOKEN
 
-load_dotenv()
-
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 HEADERS = {"Authorization": f"token {GITHUB_TOKEN}"} if GITHUB_TOKEN else {}
 
 @asynccontextmanager

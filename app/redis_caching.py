@@ -1,7 +1,8 @@
 import os
 import redis.asyncio as redis
+from .config import REDIS_URL
 
-REDIS_URL = os.getenv("REDIS_URL")
+
 
 def create_redis_client():
     return redis.from_url(

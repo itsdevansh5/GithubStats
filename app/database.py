@@ -1,8 +1,8 @@
 
 from motor.motor_asyncio import AsyncIOMotorClient
-import os
+from .config import MONGO_URL
 
-MONGO_URL = os.getenv("MONGO_URL")
+
 
 def create_mongo_client():
   
