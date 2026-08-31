@@ -1,14 +1,17 @@
 from .svg_generator import generate_stats_svg
 from fastapi import FastAPI, HTTPException, Request
 from .stats_service import compute_language_stats
-from .database import history_collection
+from .database import create_mongo_client
 from .models import StatsResponse,GithubUsername
 from fastapi.responses import Response
 from .exceptions import GithubRateLimitError,GithubServerError
 from contextlib import asynccontextmanager
 from .redis_caching import create_redis_client
+from dotenv import load_dotenv
 import httpx
 import os
+
+load_dotenv()
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 HEADERS = {"Authorization": f"token {GITHUB_TOKEN}"} if GITHUB_TOKEN else {}
@@ -21,12 +24,14 @@ async def lifespan(app: FastAPI):
             )
 
     app.state.redis_client = create_redis_client()
+    app.state.mongo_client,app.state.db = create_mongo_client()
+    
 
     yield
 
     await app.state.github_client.aclose()
     await app.state.redis_client.aclose()
-
+    await app.state.mongo_client.aclose()
 
 app = FastAPI(lifespan = lifespan)
 
@@ -39,10 +44,12 @@ async def get_stats(username: GithubUsername, request: Request):
 
     client = request.app.state.github_client
     redis_client = request.app.state.redis_client
-
+    mongo_client = request.app.state.mongo_client
+    db = request.app.state.db  
+  
     try:
         data, cached = await compute_language_stats(username,client,
-                                                          redis_client)
+                                                          redis_client,db)
     except GithubRateLimitError:
         raise HTTPException(
             status_code=503,

@@ -4,8 +4,7 @@ from .models import GithubUsername
 import redis.asyncio as redis
 import httpx
 import json
-
-from .database import stats_collection, history_collection
+from motor.motor_asyncio import AsyncIOMotorDatabase
 from .github_service import (
     get_user_repositories,
     fetch_all_repository_languages,
@@ -13,7 +12,7 @@ from .github_service import (
 
 
 async def compute_language_stats(username: GithubUsername,client: httpx.AsyncClient,
-redis_client: redis.Redis):
+redis_client: redis.Redis,db: AsyncIOMotorDatabase ):
 
     # --------------------------------
     # 1. CHECK CACHE (24 HOURS)
@@ -108,6 +107,7 @@ redis_client: redis.Redis):
     # --------------------------------
     # 10. SAVE HISTORY SNAPSHOT
     # --------------------------------
+    history_collection = db["history"]
     await history_collection.insert_one(data)
 
     return data, False
