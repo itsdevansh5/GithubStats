@@ -1,6 +1,9 @@
 from datetime import datetime, timedelta
 from fastapi import HTTPException
+from .models import GithubUsername
+import redis.asyncio as redis
 import httpx
+import json
 
 from .database import stats_collection, history_collection
 from .github_service import (
@@ -9,18 +12,20 @@ from .github_service import (
 )
 
 
-async def compute_language_stats(username: str,client: httpx.AsyncClient):
+async def compute_language_stats(username: GithubUsername,client: httpx.AsyncClient,
+redis_client: redis.Redis):
 
     # --------------------------------
     # 1. CHECK CACHE (24 HOURS)
     # --------------------------------
-    existing = await stats_collection.find_one({"username": username})
-
-    if existing:
-        age = datetime.utcnow() - existing["fetched_at"]
-
-        if age < timedelta(hours=24):
-            return existing, True
+    
+    cache_key = f"gh:langpct:{username}"
+    cached = await redis_client.get(cache_key)   
+   
+    if cached is not None:
+        result = json.loads(cached)
+        return result, True
+    
 
     # --------------------------------
     # 2. FETCH USER REPOSITORIES
@@ -88,16 +93,16 @@ async def compute_language_stats(username: str,client: httpx.AsyncClient):
         "username": username,
         "total_bytes": total_langs,
         "percentages": percentages,
-        "fetched_at": datetime.utcnow(),
+        "fetched_at": datetime.utcnow().isoformat(),
     }
 
     # --------------------------------
     # 9. SAVE CACHE
     # --------------------------------
-    await stats_collection.update_one(
-        {"username": username},
-        {"$set": data},
-        upsert=True,
+    await redis_client.set(
+        cache_key,
+        json.dumps(data),
+        ex=86400,
     )
 
     # --------------------------------

@@ -6,6 +6,7 @@ from .models import StatsResponse,GithubUsername
 from fastapi.responses import Response
 from .exceptions import GithubRateLimitError,GithubServerError
 from contextlib import asynccontextmanager
+from .redis_caching import create_redis_client
 import httpx
 import os
 
@@ -19,9 +20,12 @@ async def lifespan(app: FastAPI):
             timeout = httpx.Timeout(5.0)
             )
 
+    app.state.redis_client = create_redis_client()
+
     yield
 
     await app.state.github_client.aclose()
+    await app.state.redis_client.aclose()
 
 
 app = FastAPI(lifespan = lifespan)
@@ -34,9 +38,11 @@ def home():
 async def get_stats(username: GithubUsername, request: Request):
 
     client = request.app.state.github_client
+    redis_client = request.app.state.redis_client
 
     try:
-        data, cached = await compute_language_stats(username,client)
+        data, cached = await compute_language_stats(username,client,
+                                                          redis_client)
     except GithubRateLimitError:
         raise HTTPException(
             status_code=503,
