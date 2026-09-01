@@ -79,8 +79,14 @@ async def get_history(username: GithubUsername):
 
 
 @app.get("/card/stats/{username}")
-async def stats_card(username: GithubUsername):
-    data, _ = await compute_language_stats(username)
+async def stats_card(username: GithubUsername,request: Request):
+
+    client = request.app.state.github_client
+    redis_client = request.app.state.redis_client
+    mongo_client = request.app.state.mongo_client
+    db = request.app.state.db
+
+    data, _ = await compute_language_stats(username,client,redis_client,db)
     
     svg = generate_stats_svg(
         username=data["username"],
