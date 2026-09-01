@@ -16,6 +16,7 @@ pydantic_core==2.41.5
 pymongo==4.15.5
 python-dotenv==1.2.1
 PyYAML==6.0.3
+redis==8.1.0
 starlette==0.50.0
 typing-inspection==0.4.2
 typing_extensions==4.15.0
