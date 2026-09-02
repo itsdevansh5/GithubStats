@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta,timezone
 from fastapi import HTTPException
 from .models import GithubUsername
 import redis.asyncio as redis
@@ -92,7 +92,7 @@ redis_client: redis.Redis,db: AsyncIOMotorDatabase ):
         "username": username,
         "total_bytes": total_langs,
         "percentages": percentages,
-        "fetched_at": datetime.utcnow().isoformat(),
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
     }
 
     # --------------------------------
