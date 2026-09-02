@@ -1,10 +1,9 @@
 # 📊 GitHub Language Stats API
 
-### 🚀 FastAPI + MongoDB Atlas + GitHub API
+### 🚀 FastAPI + Redis + MongoDB Atlas + GitHub API
 
 A backend API that analyzes GitHub repository languages, computes
-language usage percentages, stores historical snapshots, caches recent
-results, and serves a dynamically generated SVG stats card.
+language usage percentages, stores historical snapshots, caches recent results, and serves a dynamically generated SVG stats card.
 
 Built with **FastAPI, MongoDB Atlas, GitHub API, and async httpx**, and
 deployed on Render.
@@ -21,13 +20,15 @@ This backend project:
     **bounded concurrency**
 -   Aggregates language byte counts across repositories
 -   Computes language usage percentages
--   Caches the latest result for 24 hours using MongoDB
--   Stores historical snapshots
+-   Caches the latest result for 24 hours using Redis
+-   Stores historical snapshots in MongoDB
 -   Validates GitHub usernames at the API boundary
 -   Generates dynamic SVG GitHub stats cards
 -   Escapes dynamic values before inserting them into SVG/XML
 -   Exposes API endpoints with Pydantic models
 -   Uses asynchronous FastAPI + httpx + Motor
+-   Uses Pydantic Settings for typed environment configuration
+-   Uses long-lived HTTPX, Redis, and MongoDB clients managed by FastAPI lifespan
 -   Is deployed on Render
 
 The project is being developed as a practical backend engineering
@@ -37,6 +38,42 @@ structure.
 
 ------------------------------------------------------------------------
 
+------------------------------------------------------------------------
+
+## 📌 Current Architecture Snapshot
+
+``` text
+FastAPI
+  │
+  ├── Pydantic validation
+  │
+  ├── Stats Service
+  │      │
+  │      ├── Redis cache-aside (24h TTL)
+  │      │
+  │      └── GitHub API
+  │             │
+  │             ├── Link-header pagination
+  │             └── bounded concurrency
+  │
+  ├── MongoDB history
+  │
+  └── SVG generator
+         └── XML-escape dynamic values
+
+FastAPI lifespan owns:
+  ├── HTTPX client
+  ├── Redis client
+  └── MongoDB client
+
+Configuration:
+  .env / OS environment
+          ↓
+  Pydantic Settings
+          ↓
+       Settings
+```
+
 ## 🧠 Tech Stack
 
   Layer                      Technology
@@ -45,8 +82,9 @@ structure.
   HTTP Client                **httpx (async)**
   Database                   **MongoDB Atlas**
   Database Driver            **Motor (async)**
+  Cache                       **Redis Cloud / redis-py (async)**
   Deployment                 **Render**
-  Configuration              **python-dotenv**
+  Configuration              **Pydantic Settings**
   Data Validation / Models   **Pydantic**
   Concurrency                **asyncio + Semaphore + gather**
   Output Format              **SVG**
@@ -138,7 +176,7 @@ Fetches the latest GitHub language statistics.
 -   Aggregates language byte counts
 -   Computes percentages
 -   Uses 24-hour caching
--   Stores historical snapshots
+-   Stores historical snapshots in MongoDB
 
 ### Example
 
@@ -401,23 +439,36 @@ calculation; the API response focuses on the calculated percentages.
 
 # 🗄️ Caching and Historical Data
 
-MongoDB is used for two related purposes:
+The current architecture deliberately gives Redis and MongoDB different
+responsibilities.
 
-### Current statistics
+### Redis: latest computed result
 
-The latest statistics for a username are stored so repeated requests can
-be served from the cache instead of repeatedly calling GitHub.
+Redis is the disposable cache for the latest statistics.
 
-The cache currently uses a **24-hour freshness window**.
+Cache key convention:
 
-Conceptually:
+``` text
+gh:langpct:<username>
+```
+
+Example:
+
+``` text
+gh:langpct:itsdevansh5
+```
+
+The key naming convention is only for organization; Redis does not assign
+special meaning to the colon-separated parts.
+
+The cache uses a **24-hour TTL**.
 
 ``` text
 Request
    ↓
-Check MongoDB cache
+Redis GET
    ↓
-Fresh result?
+Fresh cached result?
  ┌──────┴──────┐
 YES           NO
  │             │
@@ -426,29 +477,190 @@ Return       GitHub API
 cached          ↓
 result       Calculate
                 ↓
-          Update current stats
+          Redis SET + TTL
                 ↓
-          Store history snapshot
+          MongoDB history
 ```
 
-### Historical snapshots
+### MongoDB: historical snapshots
 
-Historical results are stored separately so previous calculations can be
+MongoDB stores durable historical results so previous calculations are
 retained rather than overwritten.
 
-This creates a separation between:
-
 ``` text
-Current state
-     ↓
-cache/current statistics
+Redis
+  │
+  └── latest / temporary
+          │
+          │ TTL
+          ▼
+       expires
 
-Past state
-     ↓
-historical snapshots
+MongoDB
+  │
+  └── historical snapshots
+          │
+          └── retained
 ```
 
-------------------------------------------------------------------------
+The previous MongoDB `stats` collection is no longer required for the latest
+cache because Redis now owns that responsibility. MongoDB remains responsible
+for persistent history.
+
+### Redis serialization
+
+Redis stores the cached result as JSON text:
+
+``` text
+Python dict
+    │
+    │ json.dumps()
+    ▼
+JSON string
+    │
+    ▼
+Redis
+```
+
+On retrieval:
+
+``` text
+Redis
+  │
+  ▼
+JSON string
+  │
+  │ json.loads()
+  ▼
+Python dict
+```
+
+Python `datetime` values are converted to ISO 8601 strings before JSON
+serialization.
+
+---
+
+# 🧱 Current Architecture
+
+``` text
+                         ┌─────────────────────┐
+                         │       Client        │
+                         └──────────┬──────────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │      FastAPI        │
+                         │       Routes        │
+                         └──────────┬──────────┘
+                                    │
+                         username validation
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │   Stats Service     │
+                         └──────┬────────┬─────┘
+                                │        │
+                         Redis GET        │
+                                │        │
+                         ┌──────▼───┐     │
+                         │  Redis   │     │
+                         │  24h TTL │     │
+                         └──────┬───┘     │
+                                │         │
+                           HIT ─┘         │ MISS
+                             │            ▼
+                             │    ┌─────────────────┐
+                             │    │ GitHub REST API │
+                             │    └────────┬────────┘
+                             │             │
+                             │      repositories
+                             │             │
+                             │      pagination
+                             │             │
+                             │      language calls
+                             │             │
+                             │      Semaphore(5)
+                             │             │
+                             │             ▼
+                             │    ┌─────────────────┐
+                             │    │ Aggregate +     │
+                             │    │ percentages     │
+                             │    └───────┬─────────┘
+                             │            │
+                             │       ┌────┴─────┐
+                             │       ▼          ▼
+                             │    Redis SET   MongoDB
+                             │    + 24h TTL   history
+                             │       │          │
+                             └───────┬┴──────────┘
+                                     ▼
+                                  Response
+```
+
+## Resource lifecycle
+
+Long-lived external clients are created once during FastAPI startup and
+closed during application shutdown:
+
+``` text
+Application startup
+        │
+        ├── create HTTPX client
+        ├── create Redis client
+        └── create MongoDB client
+                │
+                ▼
+             app.state
+                │
+                ▼
+          request handling
+                │
+                ▼
+Application shutdown
+        │
+        ├── close HTTPX
+        ├── close Redis
+        └── close MongoDB
+```
+
+This avoids creating a new HTTP client for every GitHub request and gives
+external resources a clear lifecycle owner.
+
+---
+
+# 🧠 Cache-Aside and Cache Stampede
+
+The current strategy is **cache-aside**: the application explicitly reads
+from Redis, computes the value on a miss, and then populates Redis.
+
+A cache stampede is not simply "many new users." It happens when many
+requests miss the **same cache key** at approximately the same time:
+
+``` text
+50 requests
+     │
+     ▼
+same Redis key
+     │
+     ▼
+   MISS
+     │
+     ├──► GitHub
+     ├──► GitHub
+     ├──► GitHub
+     ├──► ...
+     └──► GitHub
+```
+
+This can duplicate expensive GitHub work and increase the chance of rate
+limits or server overload.
+
+A future solution could use a Redis lock/single-flight mechanism so only one
+request refreshes a missing hot key while other requests wait for the result.
+
+This is intentionally deferred until there is a demonstrated need.
+
+---
 
 # 🔐 Environment Variables
 
@@ -507,20 +719,99 @@ Render starts the FastAPI application and exposes the API publicly.
 
 # 📝 To-Do / Future Improvements
 
--   [ ] Improve HTTP client lifecycle management using FastAPI lifespan
 -   [ ] Make HTTP timeout configuration explicit
--   [ ] Add automated tests
+-   [ ] Add automated tests with pytest + pytest-asyncio + respx
 -   [ ] Add rate limiting per IP
 -   [ ] Improve GitHub API error handling
 -   [ ] Improve cache stampede/concurrent-cache handling
 -   [ ] Add frontend dashboard
 -   [ ] Add export to CSV / JSON
 -   [ ] Add charts and historical trends
--   [ ] Evaluate Redis for distributed caching
+-   [x] Add Redis for distributed caching
 -   [ ] Add authentication if the project becomes a public SaaS
 -   [ ] Improve SVG card design and customization
 
 ------------------------------------------------------------------------
+
+# 🧪 Testing Roadmap
+
+The next major credibility milestone is automated testing.
+
+Planned stack:
+
+- **pytest**
+- **pytest-asyncio**
+- **respx** for mocking HTTPX/GitHub calls
+
+Priority coverage:
+
+``` text
+┌──────────────────────────────────────────┐
+│              Test Coverage               │
+├──────────────────────────────────────────┤
+│ Pagination termination                   │
+│ Bounded concurrency                      │
+│ Partial repository failure               │
+│ GitHub rate-limit detection              │
+│ SVG/XML escaping                         │
+│ Redis cache hit                          │
+│ Redis cache miss + population            │
+└──────────────────────────────────────────┘
+```
+
+GitHub requests should be mocked in tests so the test suite does not depend
+on GitHub availability or consume real API rate limits.
+
+---
+
+# 🔁 CI Roadmap
+
+After the local test suite is established, GitHub Actions will run on pull
+requests:
+
+``` text
+Pull Request
+     │
+     ▼
+GitHub Actions
+     │
+     ├──► Lint
+     │
+     ├──► Type-check
+     │
+     └──► Pytest
+              │
+          ┌───┴───┐
+          ▼       ▼
+         PASS    FAIL
+```
+
+The goal is to prevent regressions from being merged when formatting,
+typing, or behavior checks fail.
+
+---
+
+# 🐳 Docker Roadmap
+
+The planned local development environment will use Docker Compose:
+
+``` text
+              docker compose up
+                      │
+          ┌───────────┼───────────┐
+          ▼           ▼           ▼
+     ┌────────┐  ┌─────────┐  ┌─────────┐
+     │ FastAPI│  │ MongoDB │  │  Redis  │
+     │  app   │  │         │  │         │
+     └────────┘  └─────────┘  └─────────┘
+          │           ▲           ▲
+          └───────────┴───────────┘
+```
+
+The objective is a reproducible one-command local environment containing
+the application and its local infrastructure dependencies.
+
+---
 
 # 🎯 Engineering Concepts Demonstrated
 
