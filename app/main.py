@@ -8,9 +8,10 @@ from .exceptions import GithubRateLimitError,GithubServerError
 from contextlib import asynccontextmanager
 from .redis_caching import create_redis_client
 import httpx
-from .config import GITHUB_TOKEN
+from .config import settings
 
-HEADERS = {"Authorization": f"token {GITHUB_TOKEN}"} if GITHUB_TOKEN else {}
+
+HEADERS = {"Authorization": f"token {settings.github_token}"}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

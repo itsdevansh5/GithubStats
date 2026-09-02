@@ -12,6 +12,7 @@ httpx==0.28.1
 idna==3.11
 motor==3.7.1
 pydantic==2.12.5
+pydantic-settings==2.15.0
 pydantic_core==2.41.5
 pymongo==4.15.5
 python-dotenv==1.2.1

@@ -1,12 +1,12 @@
 import os
 import redis.asyncio as redis
-from .config import REDIS_URL
+from .config import settings
 
 
 
 def create_redis_client():
     return redis.from_url(
-            REDIS_URL,
+            settings.redis_url,
             decode_responses=True
            )
 

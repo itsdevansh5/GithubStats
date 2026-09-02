@@ -1,8 +1,12 @@
-import os
-from dotenv import load_dotenv
+from pydantic_settings import BaseSettings,SettingsConfigDict
 
-load_dotenv()
+class Settings(BaseSettings):
+    github_token: str | None = None
+    mongo_url: str
+    redis_url: str
 
-MONGO_URL = os.getenv("MONGO_URL")
-REDIS_URL = os.getenv("REDIS_URL")
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+    model_config = SettingsConfigDict(
+                     env_file = ".env"
+                     )
+
+settings = Settings()
