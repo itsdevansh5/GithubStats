@@ -30,6 +30,7 @@ redis_client: redis.Redis,db: AsyncIOMotorDatabase ):
     # 2. FETCH USER REPOSITORIES
     # --------------------------------
     repos = await get_user_repositories(username,client)
+    total_repos=len(repos)
 
     # --------------------------------
     # 3. FETCH LANGUAGE DATA
@@ -90,9 +91,11 @@ redis_client: redis.Redis,db: AsyncIOMotorDatabase ):
     # --------------------------------
     data = {
         "username": username,
-        "total_bytes": total_langs,
+        "language_aggregate": total_langs,
         "percentages": percentages,
+        "total_repos":total_repos,
         "fetched_at": datetime.now(timezone.utc).isoformat(),
+        "total_bytes":total_bytes  
     }
 
     # --------------------------------

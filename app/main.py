@@ -91,7 +91,10 @@ async def stats_card(username: GithubUsername,request: Request):
     
     svg = generate_stats_svg(
         username=data["username"],
-        percentages=data["percentages"]
+        percentages=data["percentages"],
+        total_bytes=data["total_bytes"],
+        repo_count=data["total_repos"],
+        fetched_at=data["fetched_at"]
     )
     
     return Response(content=svg, media_type="image/svg+xml",headers={
