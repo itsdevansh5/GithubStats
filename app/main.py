@@ -28,7 +28,7 @@ async def lifespan(app: FastAPI):
 
     await app.state.github_client.aclose()
     await app.state.redis_client.aclose()
-    await app.state.mongo_client.aclose()
+    app.state.mongo_client.close()
 
 app = FastAPI(lifespan = lifespan)
 
