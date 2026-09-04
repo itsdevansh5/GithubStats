@@ -62,7 +62,10 @@ async def get_stats(username: GithubUsername, request: Request):
     return data
 
 @app.get("/history/{username}")
-async def get_history(username: GithubUsername):
+async def get_history(username: GithubUsername,request: Request):
+    
+    db = request.app.state.db
+    history_collection = db["history"]
     cursor = history_collection.find({"username": username}).sort("fetched_at", 1)
     history = []
 

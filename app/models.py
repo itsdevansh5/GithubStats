@@ -6,8 +6,11 @@ from typing import Dict,Annotated
 class StatsResponse(BaseModel):
     username: str
     cached: bool
-    total_bytes: Dict[str, int]
+    language_aggregate: Dict[str, int]
     percentages: Dict[str, float]
+    total_repos: int
+    total_bytes: int
+    fetched_at: str
 
 GithubUsername = Annotated[str,
                           StringConstraints(pattern=r"[A-Za-z0-9-]{1,39}")
