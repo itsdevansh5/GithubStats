@@ -1,8 +1,10 @@
 from app.github_service import get_next_url
-from app.github_service import get_user_repositories
+from app.github_service import get_user_repositories,fetch_repository_languages
+from app.exceptions import GithubRateLimitError,GithubServerError
 import httpx
 import respx
 import pytest
+import asyncio
 def test_get_next_url_returns_next_link():
     link = '<https://api.github.com/users/devansh/repos?page=2>; rel="next", <https://api.github.com/users/devansh/repos?page=5>; rel="last"'
 
@@ -62,4 +64,97 @@ async def test_get_user_repositories_follows_pagination():
             repos = await get_user_repositories("devansh", client)
 
             assert repos == page1 + page2
+
+
+@pytest.mark.asyncio
+async def test_get_repository_languages_raises_rate_limit_error():
+    repo = {
+        "languages_url": "https://api.github.com/repos/devansh/test/languages"
+    }
+
+    with respx.mock:
+        respx.get(
+            "https://api.github.com/repos/devansh/test/languages"
+        ).mock(
+            return_value=httpx.Response(429)
+        )
+
+        async with httpx.AsyncClient() as client:
+            semaphore = asyncio.Semaphore(5)
+
+            with pytest.raises(GithubRateLimitError):
+                await fetch_repository_languages(
+                    repo,
+                    semaphore,
+                    client,
+                )
+            assert len(respx.calls) == 1
+
+@pytest.mark.asyncio
+async def test_fetch_repository_languages_retries_on_server_error(monkeypatch):
+    repo = {
+        "languages_url": "https://api.github.com/repos/devansh/test/languages"
+    }
+
+    async def fake_sleep(delay):
+        pass
+
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+
+    with respx.mock:
+        route = respx.get(
+            "https://api.github.com/repos/devansh/test/languages"
+        )
+
+        route.side_effect = [
+            httpx.Response(500),
+            httpx.Response(
+                200,
+                json={"Python": 1000, "C++": 500},
+            ),
+        ]
+
+        async with httpx.AsyncClient() as client:
+            semaphore = asyncio.Semaphore(5)
+
+            result = await fetch_repository_languages(
+                repo,
+                semaphore,
+                client,
+            )
+
+            assert result == {"Python": 1000, "C++": 500}
             assert len(respx.calls) == 2
+
+@pytest.mark.asyncio
+async def test_fetch_all_repositories_server_error(monkeypatch):
+       repo = {
+       "languages_url": "https://api.github.com/repos/devansh/test/languages"
+       }
+
+       async def fake_sleep(delay):
+           pass
+
+       monkeypatch.setattr(asyncio,"sleep",fake_sleep)
+
+       with respx.mock:
+          route = respx.get("https://api.github.com/repos/devansh/test/languages")
+          route.side_effect = [
+              httpx.Response(500),
+              httpx.Response(500),
+              httpx.Response(500)
+              ]
+       
+
+          async with httpx.AsyncClient() as client:
+               semaphore = asyncio.Semaphore(5)
+               with pytest.raises(GithubServerError):
+                    await fetch_repository_languages(
+                      repo,
+                      semaphore,
+                      client
+                     )
+
+          assert len(respx.calls)==3
+                 
+    
