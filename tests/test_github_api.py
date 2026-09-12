@@ -216,3 +216,51 @@ async def test_partial_failure(monkeypatch):
     {"Python": 100},
 ]
 
+
+@pytest.mark.asyncio
+async def test_max_concurrent_github_requests():
+
+    repos = [
+        {
+            "languages_url":
+                f"https://api.github.com/repos/devansh/repo{i}/languages",
+            "fork": False,
+            "archived": False,
+        }
+        for i in range(10)
+    ]
+
+    current_running = 0
+    max_running = 0
+    MAX_CONCURRENT_GITHUB_REQUESTS = 5
+    async def mock_response(request):
+        nonlocal current_running, max_running
+
+        current_running += 1
+        max_running = max(max_running, current_running)
+
+        await asyncio.sleep(0.01)
+
+        current_running -= 1
+
+        return httpx.Response(
+            200,
+            json={"Python": 100}
+        )
+
+    with respx.mock:
+        route = respx.get(
+            url__regex=r"https://api\.github\.com/repos/devansh/repo\d+/languages"
+        )
+
+        route.side_effect = mock_response
+
+        async with httpx.AsyncClient() as client:
+            result = await fetch_all_repository_languages(
+                repos,
+                client
+            )
+
+    assert len(result) == 10
+    assert max_running <= MAX_CONCURRENT_GITHUB_REQUESTS
+    
