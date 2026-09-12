@@ -1,5 +1,5 @@
 from app.github_service import get_next_url
-from app.github_service import get_user_repositories,fetch_repository_languages
+from app.github_service import get_user_repositories,fetch_repository_languages,fetch_all_repository_languages
 from app.exceptions import GithubRateLimitError,GithubServerError
 import httpx
 import respx
@@ -158,3 +158,61 @@ async def test_fetch_all_repositories_server_error(monkeypatch):
           assert len(respx.calls)==3
                  
     
+@pytest.mark.asyncio
+async def test_fetch_repository_languages_timeout():
+    repo = {
+        "languages_url": "https://api.github.com/repos/devansh/test/languages"
+    }
+
+    async with httpx.AsyncClient() as client:
+        semaphore = asyncio.Semaphore(5)
+
+        with respx.mock:
+            respx.get(
+                "https://api.github.com/repos/devansh/test/languages"
+            ).mock(
+                side_effect=httpx.ReadTimeout("GitHub timed out")
+            )
+
+            result = await fetch_repository_languages(
+                repo,
+                semaphore,
+                client,
+            )
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_partial_failure(monkeypatch):
+
+    repos = [
+        {"languages_url": "repo-a"},
+        {"languages_url": "repo-b"},
+        {"languages_url": "repo-c"},
+    ]
+
+    async def fake_fetch(repo, semaphore, client):
+
+        if repo["languages_url"] == "repo-b":
+            return None       # simulate timeout
+
+        return {"Python": 100}
+
+    monkeypatch.setattr(
+        "app.github_service.fetch_repository_languages",
+        fake_fetch
+    )
+
+    async with httpx.AsyncClient() as client:
+        result = await fetch_all_repository_languages(
+            repos,
+            client
+        )
+
+    assert len(result) == 2
+    assert result == [
+    {"Python": 100},
+    {"Python": 100},
+]
+
