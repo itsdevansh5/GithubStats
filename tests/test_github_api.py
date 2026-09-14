@@ -262,5 +262,5 @@ async def test_max_concurrent_github_requests():
             )
 
     assert len(result) == 10
-    assert max_running <= MAX_CONCURRENT_GITHUB_REQUESTS
+    assert max_running == MAX_CONCURRENT_GITHUB_REQUESTS
     
