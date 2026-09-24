@@ -28,6 +28,10 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Run tests
+        env:
+          MONGO_URL: "mongodb://localhost:27017/test"
+          REDIS_URL: "redis://localhost:6379"
+          GITHUB_TOKEN: "test-token"
         run: pytest -v
 
   docker:
