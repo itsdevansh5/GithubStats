@@ -1,206 +1,315 @@
-# 📊 GitHub Language Stats API
+# GitHub Language Stats API
 
-### 🚀 FastAPI + Redis + MongoDB Atlas + GitHub API
+### FastAPI + Redis + MongoDB Atlas + GitHub API
 
-A backend API that analyzes GitHub repository languages, computes
-language usage percentages, stores historical snapshots, caches recent results, and serves a dynamically generated SVG stats card.
+A backend API that analyzes GitHub repository language usage, computes language usage percentages, stores historical snapshots, caches recent results, and serves dynamically generated SVG statistics cards.
 
-Built with **FastAPI, MongoDB Atlas, GitHub API, and async httpx**, and
-deployed on Render.
+Built with FastAPI, Redis, MongoDB Atlas, GitHub API, async `httpx`, Docker, and GitHub Actions.
 
-------------------------------------------------------------------------
+## Overview
 
-## 🌟 Overview
+This project is designed as a practical backend engineering project with emphasis on API design, asynchronous programming, bounded concurrency, caching, database usage, resource lifecycle management, testing, Docker, and CI.
 
-This backend project:
+### Features
 
--   Fetches repositories belonging to a GitHub user
--   Skips forked and archived repositories
--   Fetches language statistics for repositories concurrently with
-    **bounded concurrency**
--   Aggregates language byte counts across repositories
--   Computes language usage percentages
--   Caches the latest result for 24 hours using Redis
--   Stores historical snapshots in MongoDB
--   Validates GitHub usernames at the API boundary
--   Generates dynamic SVG GitHub stats cards
--   Escapes dynamic values before inserting them into SVG/XML
--   Exposes API endpoints with Pydantic models
--   Uses asynchronous FastAPI + httpx + Motor
--   Uses Pydantic Settings for typed environment configuration
--   Uses long-lived HTTPX, Redis, and MongoDB clients managed by FastAPI lifespan
--   Is deployed on Render
+- Fetches repositories belonging to a GitHub user
+- Handles GitHub `Link`-header pagination
+- Skips forked and archived repositories
+- Fetches repository language statistics concurrently
+- Uses `asyncio.Semaphore` to bound concurrent GitHub requests
+- Aggregates language byte counts across repositories
+- Computes language usage percentages
+- Caches the latest computed result in Redis for 24 hours
+- Stores historical snapshots in MongoDB
+- Validates GitHub usernames at the API boundary
+- Generates dynamic SVG GitHub language-statistics cards
+- Escapes dynamic values before inserting them into SVG/XML
+- Uses Pydantic models and Pydantic Settings
+- Uses long-lived HTTPX, Redis, and MongoDB clients managed by FastAPI lifespan
+- Handles timeouts, GitHub rate limits, transient 5xx failures, and invalid responses
+- Uses bounded retries with exponential backoff for transient GitHub server errors
+- Includes automated tests with pytest, pytest-asyncio, and respx
+- Builds as a Docker image
+- Runs automated CI through GitHub Actions
+- Deployed on Render
 
-The project is being developed as a practical backend engineering
-project, with emphasis on API design, asynchronous programming,
-concurrency, caching, database usage, and production-oriented code
-structure.
+---
 
-------------------------------------------------------------------------
+## Architecture Snapshot
 
-------------------------------------------------------------------------
+```text
+                         Client
+                           |
+                           v
+                    +-------------+
+                    |   FastAPI   |
+                    |    Routes   |
+                    +------+------+
+                           |
+                    Pydantic validation
+                           |
+                           v
+                    +-------------+
+                    | Stats       |
+                    | Service     |
+                    +------+------+ 
+                           |
+                +----------+----------+
+                |                     |
+                v                     v
+          Redis cache            GitHub API
+            24h TTL                  |
+                |             +-------+-------+
+                |             |               |
+                |        pagination     language calls
+                |                             |
+                |                         Semaphore(5)
+                |                             |
+                |                             v
+                |                       Aggregation
+                |                             |
+                |              +--------------+--------------+
+                |              |                             |
+                |              v                             v
+                |         Redis SET                     MongoDB
+                |          + TTL                        history
+                |              |                             |
+                +--------------+-----------------------------+
+                               |
+                               v
+                           Response
 
-## 📌 Current Architecture Snapshot
+SVG endpoint
+    |
+    +--> SVG generator
+           |
+           +--> XML-escape dynamic values
+```
 
-``` text
-FastAPI
-  │
-  ├── Pydantic validation
-  │
-  ├── Stats Service
-  │      │
-  │      ├── Redis cache-aside (24h TTL)
-  │      │
-  │      └── GitHub API
-  │             │
-  │             ├── Link-header pagination
-  │             └── bounded concurrency
-  │
-  ├── MongoDB history
-  │
-  └── SVG generator
-         └── XML-escape dynamic values
+### Resource lifecycle
 
-FastAPI lifespan owns:
-  ├── HTTPX client
-  ├── Redis client
-  └── MongoDB client
+FastAPI lifespan owns the long-lived external clients:
 
-Configuration:
-  .env / OS environment
-          ↓
-  Pydantic Settings
-          ↓
+```text
+Application startup
+        |
+        +-- create HTTPX client
+        +-- create Redis client
+        +-- create MongoDB client
+        |
+        v
+     app.state
+        |
+        v
+  request handling
+        |
+        v
+Application shutdown
+        |
+        +-- close HTTPX
+        +-- close Redis
+        +-- close MongoDB
+```
+
+This avoids creating a new HTTP client for every GitHub request and gives external resources a clear lifecycle owner.
+
+### Configuration flow
+
+```text
+.env / OS environment
+          |
+          v
+   Pydantic Settings
+          |
+          v
        Settings
 ```
 
-## 🧠 Tech Stack
+Secrets are supplied through the environment and are not baked into the Docker image.
 
-  Layer                      Technology
-  -------------------------- ----------------------------------
-  Backend Framework          **FastAPI**
-  HTTP Client                **httpx (async)**
-  Database                   **MongoDB Atlas**
-  Database Driver            **Motor (async)**
-  Cache                       **Redis Cloud / redis-py (async)**
-  Deployment                 **Render**
-  Configuration              **Pydantic Settings**
-  Data Validation / Models   **Pydantic**
-  Concurrency                **asyncio + Semaphore + gather**
-  Output Format              **SVG**
+---
 
-------------------------------------------------------------------------
+## Tech Stack
 
-## 🗂 Project Structure
+| Layer | Technology |
+|---|---|
+| Language | Python 3.12 |
+| Backend Framework | FastAPI |
+| HTTP Client | httpx (async) |
+| Database | MongoDB Atlas |
+| Database Driver | Motor |
+| Cache | Redis Cloud / redis-py (async) |
+| Validation / Models | Pydantic |
+| Configuration | Pydantic Settings |
+| Concurrency | asyncio + Semaphore + gather |
+| Output | SVG |
+| Testing | pytest + pytest-asyncio + respx |
+| Containerization | Docker |
+| CI | GitHub Actions |
+| Deployment | Render |
 
-``` text
-github-stats/
-│── app/
+---
+
+## Project Structure
+
+```text
+GithubStats/
+├── app/
 │   ├── main.py
+│   ├── config.py
+│   ├── database.py
+│   ├── exceptions.py
 │   ├── github_api.py
 │   ├── github_service.py
-│   ├── stats_service.py
-│   ├── database.py
 │   ├── models.py
-│   ├── svg_generator.py
+│   ├── redis_caching.py
+│   ├── stats_service.py
+│   └── svg_generator.py
 │
-│── requirements.txt
-│── .env
-│── .gitignore
-│── README.md
+├── tests/
+│   ├── test_business_rules.py
+│   ├── test_github_api.py
+│   ├── test_redis.py
+│   ├── test_routing.py
+│   └── test_svg_and_xml_escape.py
+│
+├── .github/
+│   └── workflows/
+│       └── ci.yml
+│
+├── .dockerignore
+├── .gitignore
+├── Dockerfile
+├── pytest.ini
+├── requirements.txt
+├── requirements-dev.txt
+└── README.md
 ```
 
-> The exact structure may evolve as the project is further
-> productionized.
+---
 
-------------------------------------------------------------------------
+# Live Demo
 
-# 🌐 Live Demo
+### Base URL
 
-### 🚀 Base URL
-
-``` text
 https://githubstats-gqcp.onrender.com/
-```
 
-### 📘 Swagger Docs
+### Swagger / OpenAPI
 
-``` text
 https://githubstats-gqcp.onrender.com/docs
-```
 
-### Embed the SVG card in your GitHub README
+### Embed the SVG card
 
-``` html
+```html
 <img src="https://githubstats-gqcp.onrender.com/card/stats/YOUR_GITHUB_USERNAME" />
 ```
 
 Example:
 
-``` html
+```html
 <img src="https://githubstats-gqcp.onrender.com/card/stats/itsdevansh5" />
 ```
 
-------------------------------------------------------------------------
+---
 
-# 📡 API Documentation
+# API Documentation
 
-## 1️⃣ `GET /`
+## `GET /`
 
-### Health check route
+Health/status endpoint.
 
-Returns API status.
+Example response:
 
-**Example:**
-
-``` json
+```json
 {
-  "message": "GitHub Stats API is running!"
+  "message": "GitHub Stats API Running"
 }
 ```
 
-------------------------------------------------------------------------
+---
 
-## 2️⃣ `GET /stats/{username}`
+## `GET /stats/{username}`
 
 Fetches the latest GitHub language statistics.
 
-### ✨ Features
+Example:
 
--   Validates the GitHub username format
--   Fetches repositories
--   Skips forked and archived repositories
--   Fetches repository language data concurrently
--   Uses bounded concurrency to avoid excessive simultaneous GitHub
-    requests
--   Aggregates language byte counts
--   Computes percentages
--   Uses 24-hour caching
--   Stores historical snapshots in MongoDB
-
-### Example
-
-``` text
+```text
 /stats/itsdevansh5
 ```
 
-### Response
+### Request flow
 
-``` json
+```text
+GET /stats/{username}
+        |
+        v
+   Redis GET
+        |
+   +----+----+
+   |         |
+  HIT       MISS
+   |         |
+   v         v
+Return    GitHub API
+cached        |
+result        v
+          Fetch repos
+              |
+              v
+        Follow pagination
+              |
+              v
+       Filter repositories
+       (forked / archived)
+              |
+              v
+       Fetch languages
+       concurrently
+              |
+              v
+       Aggregate bytes
+              |
+              v
+       Calculate percentages
+              |
+        +-----+------+
+        |            |
+        v            v
+      Redis       MongoDB
+       cache       history
+        |            |
+        +-----+------+
+              |
+              v
+           Response
+```
+
+### Example response
+
+```json
 {
   "username": "itsdevansh5",
   "cached": false,
+  "language_aggregate": {
+    "Python": 63697231,
+    "C++": 224954,
+    "HTML": 246905
+  },
   "percentages": {
     "Python": 93.13,
     "C++": 0.33,
     "HTML": 0.36
-  }
+  },
+  "total_repos": 10,
+  "fetched_at": "2026-09-24T12:34:11+00:00",
+  "total_bytes": 64329090
 }
 ```
 
-If a cached result is available:
+When Redis contains a valid cached result:
 
-``` json
+```json
 {
   "username": "itsdevansh5",
   "cached": true,
@@ -212,26 +321,28 @@ If a cached result is available:
 }
 ```
 
-------------------------------------------------------------------------
+---
 
-## 3️⃣ `GET /history/{username}`
+## `GET /history/{username}`
 
-Returns historical language-statistics snapshots for a user.
+Returns historical language-statistics snapshots stored in MongoDB.
 
-### Example
+Example:
 
-``` text
+```text
 /history/itsdevansh5
 ```
 
-### Response
+The history endpoint sorts snapshots by `fetched_at`.
 
-``` json
+Example:
+
+```json
 {
   "username": "itsdevansh5",
   "history": [
     {
-      "fetched_at": "2026-08-10T12:34:11",
+      "fetched_at": "2026-08-10T12:34:11+00:00",
       "percentages": {
         "Python": 93.13,
         "C++": 0.33,
@@ -239,7 +350,7 @@ Returns historical language-statistics snapshots for a user.
       }
     },
     {
-      "fetched_at": "2026-08-11T12:34:11",
+      "fetched_at": "2026-08-11T12:34:11+00:00",
       "percentages": {
         "Python": 92.80,
         "C++": 0.50,
@@ -250,589 +361,593 @@ Returns historical language-statistics snapshots for a user.
 }
 ```
 
-------------------------------------------------------------------------
+---
 
-## 4️⃣ `GET /card/stats/{username}`
+## `GET /card/stats/{username}`
 
-Generates a dynamic **SVG GitHub language-stats card**.
+Generates a dynamic SVG GitHub language-statistics card.
 
-The username is now a **path parameter**, making the API consistent with
-the other username-based endpoints.
+Example:
 
-### Example
-
-``` text
+```text
 /card/stats/itsdevansh5
 ```
 
-### Embed in GitHub README
+Embed it in a GitHub README:
 
-``` html
+```html
 <img src="https://githubstats-gqcp.onrender.com/card/stats/itsdevansh5" />
 ```
 
 The endpoint returns:
 
-``` text
+```text
 Content-Type: image/svg+xml
 ```
 
-so browsers and GitHub-compatible clients can render the response as an
-SVG image.
+so browsers and GitHub-compatible clients can render the response as an SVG image.
 
-------------------------------------------------------------------------
+---
 
-# ⚡ Asynchronous GitHub Fetching
+# Asynchronous GitHub Fetching
 
-Repository language data is fetched using `httpx.AsyncClient`.
+Repository language data is fetched using a shared `httpx.AsyncClient`.
 
-Instead of waiting for every repository request sequentially:
+Sequential fetching would look conceptually like:
 
-``` text
-Repo 1 → wait → Repo 2 → wait → Repo 3 → wait
+```text
+Repo 1 -> wait -> Repo 2 -> wait -> Repo 3 -> wait
 ```
 
-the service creates coroutine objects for valid repositories and
-coordinates them with:
+Instead, repository language requests are coordinated using:
 
-``` python
+```python
 asyncio.gather(...)
 ```
 
-A semaphore limits the number of GitHub requests that can be active
-simultaneously.
+A semaphore limits how many GitHub requests can be active simultaneously.
 
-The current concurrency limit is:
+Current limit:
 
-``` python
+```python
 MAX_CONCURRENT_GITHUB_REQUESTS = 5
 ```
 
 Conceptually:
 
-``` text
-Many repository coroutines
-          ↓
-    asyncio.gather()
-          ↓
-    Semaphore(5)
-          ↓
+```text
+Many repository tasks
+        |
+        v
+  asyncio.gather()
+        |
+        v
+   Semaphore(5)
+        |
+        v
 Maximum 5 active GitHub requests
-          ↓
+        |
+        v
 As one finishes, another can enter
 ```
 
-This provides concurrency without creating an uncontrolled burst of
-requests against the GitHub API.
+This provides concurrency without creating an uncontrolled burst of requests.
 
-Expected repository-level HTTP/validation failures are handled
-independently so that one problematic repository does not fail the
-entire statistics calculation.
+Expected repository-level HTTP and validation failures can be isolated so that one problematic repository does not necessarily fail the entire aggregation.
 
-------------------------------------------------------------------------
+---
 
-# 🔐 Username Validation
+# GitHub Pagination
 
-GitHub usernames are validated at the API boundary before GitHub is
-contacted.
+GitHub repository responses can span multiple pages.
 
-The validation checks that the supplied username follows the expected
-GitHub username format.
+The service follows GitHub's `Link` response header and continues fetching pages until there is no `rel="next"` URL.
 
-This prevents obviously invalid input from unnecessarily reaching the
-GitHub API.
+Conceptually:
+
+```text
+GET page 1
+   |
+   +--> Link: next
+            |
+            v
+        GET page 2
+            |
+            +--> Link: next
+                     |
+                     v
+                 GET page 3
+                     |
+                     v
+                  complete
+```
+
+This avoids assuming that a single API response contains every repository.
+
+---
+
+# Retry and Error Handling
+
+The GitHub integration distinguishes between different failure categories, including:
+
+- request timeouts
+- invalid external responses
+- GitHub rate limiting
+- transient GitHub server errors
+
+Transient 5xx failures use bounded retries with exponential backoff rather than retrying indefinitely.
+
+Low-level GitHub/application exceptions are separated from FastAPI's HTTP responses. The route layer converts relevant application failures into appropriate HTTP responses.
+
+---
+
+# Username Validation
+
+GitHub usernames are validated at the API boundary before GitHub is contacted.
+
+The validation checks that the supplied username follows the expected GitHub username format.
 
 Validation and resource existence are treated separately:
 
-``` text
+```text
 Invalid username format
-        ↓
-API validation error
+        |
+        v
+Validation error
 
 Valid format
-        ↓
+        |
+        v
 GitHub API request
-        ↓
+        |
+        v
 User exists / does not exist
 ```
 
-The same username validation rule is intended to be reused across:
+The same validation model is reused across:
 
-``` text
+```text
 /stats/{username}
 /history/{username}
 /card/stats/{username}
 ```
 
-------------------------------------------------------------------------
+---
 
-# 🛡️ SVG Output Safety
+# SVG Output Safety
 
-The SVG card is generated dynamically from data returned by the
-application and GitHub.
+The SVG card contains dynamic values such as:
 
-Dynamic values such as:
+- GitHub username
+- GitHub language names
+- calculated percentages
 
--   GitHub username
--   GitHub language names
-
-are escaped before being inserted into the SVG/XML markup.
+Dynamic values are XML-escaped before being inserted into the SVG/XML markup.
 
 For example:
 
-``` text
+```text
 &
 ```
 
-is represented safely inside XML as:
+becomes:
 
-``` text
+```text
 &amp;
 ```
 
 and:
 
-``` text
+```text
 <
 ```
 
 becomes:
 
-``` text
+```text
 &lt;
 ```
 
-This ensures dynamic data is interpreted as **text/data rather than
-SVG/XML markup**.
+This ensures dynamic data is interpreted as text/data rather than SVG/XML markup.
 
-The SVG markup itself is not escaped; only dynamic values inserted into
-that markup are escaped.
+The static SVG markup itself is not escaped; only dynamic values inserted into that markup are escaped.
 
-------------------------------------------------------------------------
+---
 
-# 🧮 How Percentages Are Calculated
+# Percentage Calculation
 
-GitHub returns byte counts for each language.
+GitHub returns language byte counts.
 
-Example:
+For example:
 
-``` text
-Python → 63697231
-C++    → 224954
-HTML   → 246905
+```text
+Python -> 63697231
+C++    -> 224954
+HTML   -> 246905
 ```
 
-The service aggregates the byte counts across all valid repositories.
+The service aggregates byte counts across all valid repositories.
 
 The percentage formula is:
 
-``` text
-percent = (bytes_of_language / total_language_bytes) × 100
+```text
+percentage = (language_bytes / total_language_bytes) * 100
 ```
 
 The resulting percentages are rounded to two decimal places.
 
-The raw byte counts are used internally for aggregation and percentage
-calculation; the API response focuses on the calculated percentages.
+Raw byte counts are retained in the computed data for aggregation and metadata, while percentages provide the main language-distribution view.
 
-------------------------------------------------------------------------
+---
 
-# 🗄️ Caching and Historical Data
+# Caching and Historical Data
 
-The current architecture deliberately gives Redis and MongoDB different
-responsibilities.
+Redis and MongoDB deliberately have different responsibilities.
 
-### Redis: latest computed result
+## Redis: latest computed result
 
 Redis is the disposable cache for the latest statistics.
 
 Cache key convention:
 
-``` text
+```text
 gh:langpct:<username>
 ```
 
 Example:
 
-``` text
+```text
 gh:langpct:itsdevansh5
 ```
 
-The key naming convention is only for organization; Redis does not assign
-special meaning to the colon-separated parts.
+The colon-separated naming convention is only for organization; Redis does not assign special meaning to those parts.
 
-The cache uses a **24-hour TTL**.
+The cache uses a 24-hour TTL.
 
-``` text
+### Cache-aside flow
+
+```text
 Request
-   ↓
+   |
+   v
 Redis GET
-   ↓
-Fresh cached result?
- ┌──────┴──────┐
-YES           NO
- │             │
- ▼             ▼
-Return       GitHub API
-cached          ↓
-result       Calculate
-                ↓
-          Redis SET + TTL
-                ↓
-          MongoDB history
+   |
+   v
+Cached result?
+ +-----+-----+
+ |           |
+YES          NO
+ |           |
+ v           v
+Return     GitHub API
+cached        |
+result        v
+          Calculate
+              |
+              v
+        Redis SET + TTL
+              |
+              v
+        MongoDB history
 ```
 
-### MongoDB: historical snapshots
+## MongoDB: historical snapshots
 
-MongoDB stores durable historical results so previous calculations are
-retained rather than overwritten.
+MongoDB stores durable historical results so previous calculations are retained rather than overwritten.
 
-``` text
+The separation is:
+
+```text
 Redis
-  │
-  └── latest / temporary
-          │
-          │ TTL
-          ▼
-       expires
+  |
+  +-- latest / temporary
+          |
+          +-- 24h TTL
+          +-- expires
 
 MongoDB
-  │
-  └── historical snapshots
-          │
-          └── retained
+  |
+  +-- historical snapshots
+          |
+          +-- retained
 ```
 
-The previous MongoDB `stats` collection is no longer required for the latest
-cache because Redis now owns that responsibility. MongoDB remains responsible
-for persistent history.
+MongoDB therefore acts as the durable history store rather than the current cache.
 
-### Redis serialization
+---
 
-Redis stores the cached result as JSON text:
+# Redis Serialization
 
-``` text
+Redis values are serialized as JSON.
+
+```text
 Python dict
-    │
-    │ json.dumps()
-    ▼
+    |
+    | json.dumps()
+    v
 JSON string
-    │
-    ▼
+    |
+    v
 Redis
 ```
 
 On retrieval:
 
-``` text
+```text
 Redis
-  │
-  ▼
+  |
+  v
 JSON string
-  │
-  │ json.loads()
-  ▼
+  |
+  | json.loads()
+  v
 Python dict
 ```
 
-Python `datetime` values are converted to ISO 8601 strings before JSON
-serialization.
+Datetime values are converted to ISO 8601 strings before JSON serialization.
 
 ---
 
-# 🧱 Current Architecture
+# Cache Stampede
 
-``` text
-                         ┌─────────────────────┐
-                         │       Client        │
-                         └──────────┬──────────┘
-                                    │
-                                    ▼
-                         ┌─────────────────────┐
-                         │      FastAPI        │
-                         │       Routes        │
-                         └──────────┬──────────┘
-                                    │
-                         username validation
-                                    │
-                                    ▼
-                         ┌─────────────────────┐
-                         │   Stats Service     │
-                         └──────┬────────┬─────┘
-                                │        │
-                         Redis GET        │
-                                │        │
-                         ┌──────▼───┐     │
-                         │  Redis   │     │
-                         │  24h TTL │     │
-                         └──────┬───┘     │
-                                │         │
-                           HIT ─┘         │ MISS
-                             │            ▼
-                             │    ┌─────────────────┐
-                             │    │ GitHub REST API │
-                             │    └────────┬────────┘
-                             │             │
-                             │      repositories
-                             │             │
-                             │      pagination
-                             │             │
-                             │      language calls
-                             │             │
-                             │      Semaphore(5)
-                             │             │
-                             │             ▼
-                             │    ┌─────────────────┐
-                             │    │ Aggregate +     │
-                             │    │ percentages     │
-                             │    └───────┬─────────┘
-                             │            │
-                             │       ┌────┴─────┐
-                             │       ▼          ▼
-                             │    Redis SET   MongoDB
-                             │    + 24h TTL   history
-                             │       │          │
-                             └───────┬┴──────────┘
-                                     ▼
-                                  Response
-```
+The current strategy is cache-aside.
 
-## Resource lifecycle
+A cache stampede can occur when many requests miss the same cache key at approximately the same time:
 
-Long-lived external clients are created once during FastAPI startup and
-closed during application shutdown:
-
-``` text
-Application startup
-        │
-        ├── create HTTPX client
-        ├── create Redis client
-        └── create MongoDB client
-                │
-                ▼
-             app.state
-                │
-                ▼
-          request handling
-                │
-                ▼
-Application shutdown
-        │
-        ├── close HTTPX
-        ├── close Redis
-        └── close MongoDB
-```
-
-This avoids creating a new HTTP client for every GitHub request and gives
-external resources a clear lifecycle owner.
-
----
-
-# 🧠 Cache-Aside and Cache Stampede
-
-The current strategy is **cache-aside**: the application explicitly reads
-from Redis, computes the value on a miss, and then populates Redis.
-
-A cache stampede is not simply "many new users." It happens when many
-requests miss the **same cache key** at approximately the same time:
-
-``` text
+```text
 50 requests
-     │
-     ▼
+     |
+     v
 same Redis key
-     │
-     ▼
+     |
+     v
    MISS
-     │
-     ├──► GitHub
-     ├──► GitHub
-     ├──► GitHub
-     ├──► ...
-     └──► GitHub
+     |
+     +--> GitHub
+     +--> GitHub
+     +--> GitHub
+     +--> ...
+     +--> GitHub
 ```
 
-This can duplicate expensive GitHub work and increase the chance of rate
-limits or server overload.
+This can duplicate expensive GitHub work and increase the chance of rate limiting.
 
-A future solution could use a Redis lock/single-flight mechanism so only one
-request refreshes a missing hot key while other requests wait for the result.
+A Redis lock or single-flight mechanism could be introduced later so that only one request refreshes a missing hot key while other requests wait.
 
 This is intentionally deferred until there is a demonstrated need.
 
 ---
 
-# 🔐 Environment Variables
+# Environment Variables
 
-Create a local `.env` file containing your secrets:
+Create a local `.env` file containing your secrets.
 
-``` text
-MONGO_URL="mongodb+srv://<user>:<password>@cluster.mongodb.net/?retryWrites=true&w=majority"
-GITHUB_TOKEN="your_github_token_here"
+Example:
+
+```env
+MONGO_URL=mongodb+srv://<user>:<password>@cluster.mongodb.net/?retryWrites=true&w=majority
+REDIS_URL=redis://<user>:<password>@<host>:<port>
+GITHUB_TOKEN=your_github_token_here
 ```
 
-**Never commit `.env` to GitHub.**
+Do not commit `.env` to GitHub.
 
-Add:
+The repository's `.gitignore` and `.dockerignore` exclude local environment files.
 
-``` text
-.env
+For Docker, environment variables are injected at runtime:
+
+```bash
+docker run --env-file .env -p 8000:8000 githubstats
 ```
 
-to `.gitignore`.
-
-------------------------------------------------------------------------
-
-# 🚀 Deployment (Render)
-
-### 1️⃣ Push the project to GitHub
-
-### 2️⃣ Create a Render Web Service
-
-Connect the GitHub repository to Render.
-
-### 3️⃣ Configure the build command
-
-``` bash
-pip install -r requirements.txt
-```
-
-### 4️⃣ Configure the start command
-
-``` bash
-uvicorn app.main:app --host=0.0.0.0 --port=$PORT
-```
-
-### 5️⃣ Configure environment variables
-
-``` text
-MONGO_URL=your_mongodb_connection_string
-GITHUB_TOKEN=your_github_token
-PYTHON_VERSION=3.11
-```
-
-### 6️⃣ Deploy
-
-Render starts the FastAPI application and exposes the API publicly.
-
-------------------------------------------------------------------------
-
-# 📝 To-Do / Future Improvements
-
--   [ ] Make HTTP timeout configuration explicit
--   [ ] Add automated tests with pytest + pytest-asyncio + respx
--   [ ] Add rate limiting per IP
--   [ ] Improve GitHub API error handling
--   [ ] Improve cache stampede/concurrent-cache handling
--   [ ] Add frontend dashboard
--   [ ] Add export to CSV / JSON
--   [ ] Add charts and historical trends
--   [x] Add Redis for distributed caching
--   [ ] Add authentication if the project becomes a public SaaS
--   [ ] Improve SVG card design and customization
-
-------------------------------------------------------------------------
-
-# 🧪 Testing Roadmap
-
-The next major credibility milestone is automated testing.
-
-Planned stack:
-
-- **pytest**
-- **pytest-asyncio**
-- **respx** for mocking HTTPX/GitHub calls
-
-Priority coverage:
-
-``` text
-┌──────────────────────────────────────────┐
-│              Test Coverage               │
-├──────────────────────────────────────────┤
-│ Pagination termination                   │
-│ Bounded concurrency                      │
-│ Partial repository failure               │
-│ GitHub rate-limit detection              │
-│ SVG/XML escaping                         │
-│ Redis cache hit                          │
-│ Redis cache miss + population            │
-└──────────────────────────────────────────┘
-```
-
-GitHub requests should be mocked in tests so the test suite does not depend
-on GitHub availability or consume real API rate limits.
+Secrets are therefore not baked into the Docker image.
 
 ---
 
-# 🔁 CI Roadmap
+# Docker
 
-After the local test suite is established, GitHub Actions will run on pull
-requests:
+The project includes a Dockerfile for reproducible application packaging.
 
-``` text
-Pull Request
-     │
-     ▼
+## Build
+
+```bash
+docker build -t githubstats .
+```
+
+## Run
+
+```bash
+docker run --env-file .env   -p 8000:8000   --name githubstats-container   githubstats
+```
+
+Then open:
+
+```text
+http://localhost:8000/docs
+```
+
+### Container architecture
+
+```text
+Host / VM
+    |
+    v
+Docker Engine
+    |
+    v
+GithubStats container
+    |
+    +-- Python 3.12
+    +-- FastAPI
+    +-- Uvicorn
+    +-- application dependencies
+    |
+    +-------> Redis Cloud
+    |
+    +-------> MongoDB Atlas
+    |
+    +-------> GitHub API
+```
+
+MongoDB Atlas and Redis Cloud remain external managed services; they are not packaged inside the application container.
+
+The `Dockerfile` is committed to the repository because it is part of the application's reproducible build instructions.
+
+---
+
+# Testing
+
+The project uses:
+
+- `pytest`
+- `pytest-asyncio`
+- `respx`
+
+The tests cover application behavior including:
+
+- GitHub API interaction
+- pagination
+- retry behavior
+- GitHub rate-limit handling
+- persistent GitHub server failures
+- Redis cache hits
+- Redis cache misses and population
+- routing
+- history retrieval
+- SVG generation
+- XML escaping
+- business rules
+
+GitHub HTTP requests are mocked in tests so the suite does not depend on GitHub availability or consume real API rate limits.
+
+Run the complete test suite:
+
+```bash
+pytest -v
+```
+
+Run with coverage:
+
+```bash
+pytest --cov=. --cov-report=term-missing
+```
+
+---
+
+# Continuous Integration
+
+GitHub Actions is used for CI.
+
+The workflow runs on pushes to the main branch and on pull requests.
+
+The CI pipeline:
+
+```text
+Push / Pull Request
+        |
+        v
 GitHub Actions
-     │
-     ├──► Lint
-     │
-     ├──► Type-check
-     │
-     └──► Pytest
-              │
-          ┌───┴───┐
-          ▼       ▼
-         PASS    FAIL
+        |
+        v
+Ubuntu runner
+        |
+        +--> Checkout repository
+        |
+        +--> Set up Python
+        |
+        +--> Install dependencies
+        |
+        +--> Run pytest
+        |
+        +--> Build Docker image
 ```
 
-The goal is to prevent regressions from being merged when formatting,
-typing, or behavior checks fail.
+The Docker build is performed after the test job succeeds.
+
+CI therefore verifies both:
+
+1. The application behavior passes the automated test suite.
+2. The project can still be packaged into a Docker image.
+
+The CI workflow is stored at:
+
+```text
+.github/workflows/ci.yml
+```
 
 ---
 
-# 🐳 Docker Roadmap
+# Deployment
 
-The planned local development environment will use Docker Compose:
+The application is deployed on Render.
 
-``` text
-              docker compose up
-                      │
-          ┌───────────┼───────────┐
-          ▼           ▼           ▼
-     ┌────────┐  ┌─────────┐  ┌─────────┐
-     │ FastAPI│  │ MongoDB │  │  Redis  │
-     │  app   │  │         │  │         │
-     └────────┘  └─────────┘  └─────────┘
-          │           ▲           ▲
-          └───────────┴───────────┘
-```
+Production API:
 
-The objective is a reproducible one-command local environment containing
-the application and its local infrastructure dependencies.
+https://githubstats-gqcp.onrender.com/
+
+Swagger documentation:
+
+https://githubstats-gqcp.onrender.com/docs
+
+Production secrets are configured through the deployment platform rather than committed to the repository.
 
 ---
 
-# 🎯 Engineering Concepts Demonstrated
+# Engineering Concepts Demonstrated
 
-This project is intentionally being developed around practical backend
-concepts:
+This project demonstrates practical backend engineering concepts:
 
--   REST API design
--   FastAPI routing
--   Pydantic validation and response models
--   Async/await
--   Python coroutines
--   `asyncio.gather`
--   Bounded concurrency with semaphores
--   Async HTTP clients
--   HTTP connection pooling
--   HTTP error handling
--   MongoDB persistence
--   Cache-aside style caching
--   Historical data storage
--   XML/SVG output generation
--   Context-aware output escaping
--   Environment-based configuration
--   Cloud deployment
--   Git-based incremental refactoring
+- REST API design
+- FastAPI routing
+- Pydantic validation
+- Pydantic Settings
+- OpenAPI / Swagger
+- async/await
+- Python coroutines
+- `asyncio.gather`
+- bounded concurrency
+- semaphores
+- async HTTP clients
+- HTTP connection pooling
+- API pagination
+- retries
+- exponential backoff
+- rate-limit handling
+- external API integration
+- Redis caching
+- cache-aside architecture
+- TTL
+- MongoDB persistence
+- historical data storage
+- application lifecycle management
+- resource cleanup
+- environment-based configuration
+- Docker
+- GitHub Actions CI
+- automated testing
+- SVG generation
+- XML escaping
+- separation of concerns
+- service-layer architecture
+
+---
+
+# Project Status
+
+**Complete**
+
+Current project milestones:
+
+- FastAPI backend
+- GitHub API integration
+- Link-header pagination
+- bounded asynchronous concurrency
+- retry and error handling
+- Redis cache-aside with 24-hour TTL
+- MongoDB historical snapshots
+- SVG statistics card
+- XML escaping
+- automated tests
+- Docker containerization
+- GitHub Actions CI
+- Render deployment
